@@ -19,9 +19,10 @@ class SimilarityEngine:
         try:
             from sentence_transformers import SentenceTransformer
             self._sbert_model = SentenceTransformer("all-MiniLM-L6-v2")
-            print("✅ SBERT encoder loaded.")
+            print("[OK] SBERT encoder loaded.")
         except Exception as e:
-            print(f"⚠️ SBERT encoder not available: {e}")
+            # Fallback aman ke TF-IDF saja. Pakai ASCII (hindari crash encoding di Windows).
+            print(f"[WARN] SBERT encoder not available, using TF-IDF only: {e}")
         return self._sbert_model
 
     def get_matches(self, resume_text: str, top_k: int = 10) -> dict:
@@ -51,9 +52,21 @@ class SimilarityEngine:
         if self.df_jobs is not None:
             cols = self.df_jobs.columns.tolist()
             title_col = next((c for c in cols if "title" in c.lower()), None)
-            skills_col = next(
-                (c for c in cols if "skill" in c.lower() and c != title_col), None
-            )
+            # Prioritaskan daftar skill yang sudah diekstrak (comma-separated),
+            # bukan kolom deskripsi bebas seperti "skills_desc".
+            if "extracted_skills" in cols:
+                skills_col = "extracted_skills"
+            else:
+                skills_col = next(
+                    (
+                        c
+                        for c in cols
+                        if "skill" in c.lower()
+                        and "desc" not in c.lower()
+                        and c != title_col
+                    ),
+                    None,
+                )
 
         matches = []
         for rank, idx in enumerate(top_indices, 1):

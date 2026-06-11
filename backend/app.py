@@ -56,17 +56,17 @@ def _load_models():
         if parquet_path.exists():
             import pandas as pd
             df_jobs = pd.read_parquet(parquet_path)
-            print(f"✅ Job postings metadata loaded ({len(df_jobs):,} rows)")
+            print(f"[OK] Job postings metadata loaded ({len(df_jobs):,} rows)")
 
         state["extractor"] = SkillExtractor(skill_taxonomy)
         state["engine"] = SimilarityEngine(
             tfidf_vectorizer, job_tfidf_matrix, job_sbert_embeddings, df_jobs
         )
         state["gap_analyzer"] = GapAnalyzer(skill_taxonomy, learning_resources)
-        print("✅ All models loaded successfully!")
+        print("[OK] All models loaded successfully!")
     except Exception as e:
-        print(f"⚠️ Error loading models: {e}")
-        print(f"   Pastikan semua file model ada di folder: {MODELS_DIR.resolve()}")
+        print(f"[ERROR] Error loading models: {e}")
+        print(f"        Pastikan semua file model ada di folder: {MODELS_DIR.resolve()}")
 
 
 # ─── App ──────────────────────────────────────────────────────────────────────
@@ -131,6 +131,19 @@ def _parse_file(content: bytes, ext: str) -> str:
     return extract_text_from_docx(content)
 
 
+def _flatten_unique(skills_by_category: dict) -> list:
+    # Gabungkan semua kategori jadi satu list tanpa duplikat (urutan dijaga).
+    # Beberapa skill (mis. "creative") tercatat di >1 kategori.
+    seen = set()
+    out = []
+    for skills in skills_by_category.values():
+        for s in skills:
+            if s not in seen:
+                seen.add(s)
+                out.append(s)
+    return out
+
+
 # ─── Health ───────────────────────────────────────────────────────────────────
 
 
@@ -176,7 +189,7 @@ async def upload_resume(file: UploadFile = File(...)):
         cleaned = clean_text(raw_text)
         extractor: SkillExtractor = state["extractor"]
         skills_by_category = extractor.extract(cleaned)
-        extracted_skills = [s for cat in skills_by_category.values() for s in cat]
+        extracted_skills = _flatten_unique(skills_by_category)
 
         return {
             "status": "success",
@@ -308,7 +321,7 @@ async def full_pipeline(
 
         # Step 1: Extract skills
         skills_by_category = extractor.extract(cleaned)
-        user_skills = [s for cat in skills_by_category.values() for s in cat]
+        user_skills = _flatten_unique(skills_by_category)
 
         # Step 2: Match jobs
         skill_text = " ".join(user_skills) + " " + cleaned
