@@ -1,7 +1,10 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
+# ==============================================================================
+# Dependencies (frontend / Node.js)
+# ==============================================================================
 /node_modules
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -10,32 +13,69 @@
 !.yarn/releases
 !.yarn/versions
 
-# testing
-/coverage
-
-# next.js
+# ==============================================================================
+# Next.js / build output
+# ==============================================================================
 /.next/
 /out/
-
-# production
 /build
+/coverage
+*.tsbuildinfo
+next-env.d.ts
 
-# misc
+# ==============================================================================
+# Python (backend)
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Virtual environments (jangan pernah push folder env)
+venv/
+.venv/
+env/
+ENV/
+
+# ==============================================================================
+# Environment variables
+# Jangan push file berisi konfigurasi/secret lokal — TAPI tetap sertakan
+# file *.example sebagai template aman untuk tim.
+# ==============================================================================
+.env
+.env.*
+!.env.example
+!backend/.env.example
+
+# ==============================================================================
+# Editor / OS junk
+# ==============================================================================
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
 *.pem
 
-# debug
+# ==============================================================================
+# Logs
+# ==============================================================================
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
+# ==============================================================================
+# Vercel
+# ==============================================================================
 .vercel
 
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# ==============================================================================
+# CATATAN: backend/models/ (file .pkl .npz .npy .json) SENGAJA TIDAK di-ignore
+# supaya tim bisa langsung menjalankan backend setelah clone.
+# ==============================================================================

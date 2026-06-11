@@ -12,6 +12,51 @@ import {
   Home,
 } from "lucide-react";
 
+/* ------------------------------------------------------------------ */
+/* Tipe response dari backend FastAPI (/api/v1/analyze/full)            */
+/* ------------------------------------------------------------------ */
+interface JobMatch {
+  rank: number;
+  job_title: string;
+  match_score_tfidf: number;
+  match_score_sbert?: number;
+  combined_score: number;
+  required_skills: string[];
+}
+
+interface LearningResource {
+  title: string;
+  provider: string;
+  url: string;
+  level: string;
+}
+
+interface AnalysisResult {
+  resume_parse: {
+    extracted_skills: string[];
+    skill_count: number;
+    skills_by_category: Record<string, string[]>;
+  };
+  job_matches: {
+    matches: JobMatch[];
+    total_matches: number;
+  };
+  gap_analysis: {
+    match_percentage: number;
+    matched_skills: string[];
+    missing_skills: string[];
+    gap_by_category: Record<string, string[]>;
+  };
+  learning_recommendations: {
+    recommendations: { skill: string; resources: LearningResource[] }[];
+    total_skills_covered: number;
+    skills_not_covered: string[];
+  };
+}
+
+// URL backend — bisa di-override lewat .env.local (NEXT_PUBLIC_API_URL)
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 export default function UploadPage() {
   const [dragActive, setDragActive] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -20,10 +65,19 @@ export default function UploadPage() {
   const [showResults, setShowResults] = useState(false);
   const [error, setError] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [result, setResult] = useState<AnalysisResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const allowedFormats = [".pdf", ".doc", ".docx"];
-  const maxFileSize = 5 * 1024 * 1024; // 5MB
+  const allowedFormats = [".pdf", ".docx"];
+  const maxFileSize = 10 * 1024 * 1024; // 10MB (samakan dengan limit backend)
+
+  const cardStyle: React.CSSProperties = {
+    background: "rgba(255,255,255,0.92)",
+    border: "1px solid rgba(148,163,184,0.18)",
+    borderRadius: 16,
+    padding: 28,
+    boxShadow: "0 18px 50px rgba(15,23,42,0.06)",
+  };
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -56,42 +110,62 @@ export default function UploadPage() {
 
     // Validate format
     if (!allowedFormats.includes(fileExtension)) {
-      setError("Format file tidak didukung. Gunakan PDF, DOC, atau DOCX.");
+      setError("Format file tidak didukung. Gunakan PDF atau DOCX.");
       return;
     }
 
     // Validate size
     if (file.size > maxFileSize) {
-      setError("Ukuran file terlalu besar. Maksimal 5MB.");
+      setError("Ukuran file terlalu besar. Maksimal 10MB.");
       return;
     }
 
     setUploadedFile(file);
-    simulateUpload(file);
+    analyzeResume(file);
   };
 
-  const simulateUpload = async (file: File) => {
+  // Kirim file ke backend FastAPI dan ambil hasil analisis lengkap
+  const analyzeResume = async (file: File) => {
     setUploading(true);
+    setUploadSuccess(false);
+    setResult(null);
     setUploadProgress(0);
 
-    // Simulate upload progress
+    // Animasi progress sambil menunggu response (request pertama bisa lama
+    // karena backend memuat model SBERT)
     const interval = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 90) {
-          clearInterval(interval);
-          return prev;
-        }
-        return prev + Math.random() * 30;
-      });
-    }, 300);
+      setUploadProgress((prev) => (prev >= 90 ? prev : prev + Math.random() * 15));
+    }, 400);
 
-    // Simulate network delay
-    setTimeout(() => {
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch(`${API_URL}/api/v1/analyze/full`, {
+        method: "POST",
+        body: formData,
+      });
+      const json = await res.json();
+
       clearInterval(interval);
       setUploadProgress(100);
+
+      if (res.ok && json.status === "success") {
+        setResult(json.data as AnalysisResult);
+        setUploadSuccess(true);
+      } else {
+        setError(json.message || json.detail || "Analisis gagal. Coba lagi.");
+        setUploadedFile(null);
+      }
+    } catch {
+      clearInterval(interval);
+      setError(
+        `Tidak bisa terhubung ke server. Pastikan backend berjalan di ${API_URL}.`
+      );
+      setUploadedFile(null);
+    } finally {
       setUploading(false);
-      setUploadSuccess(true);
-    }, 2000);
+    }
   };
 
   const handleRemoveFile = () => {
@@ -100,6 +174,7 @@ export default function UploadPage() {
     setShowResults(false);
     setUploadProgress(0);
     setError("");
+    setResult(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -266,7 +341,7 @@ export default function UploadPage() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.doc,.docx"
+            accept=".pdf,.docx"
             onChange={handleFileSelect}
             style={{ display: "none" }}
           />
@@ -414,7 +489,7 @@ export default function UploadPage() {
               marginTop: 20,
             }}
           >
-            Format: PDF, DOC, DOCX • Maksimal ukuran: 5MB
+            Format: PDF, DOCX • Maksimal ukuran: 10MB
           </p>
         </div>
         )}
@@ -493,7 +568,7 @@ export default function UploadPage() {
         )}
 
         {/* Results Section */}
-        {showResults && (
+        {showResults && result && (
           <div style={{ marginTop: 48 }}>
             {/* Results Header */}
             <div style={{ marginBottom: 40, textAlign: "center" }}>
@@ -547,7 +622,7 @@ export default function UploadPage() {
                     letterSpacing: "0.05em",
                   }}
                 >
-                  Skor Keseluruhan
+                  Skill Terdeteksi
                 </p>
                 <p
                   style={{
@@ -557,10 +632,10 @@ export default function UploadPage() {
                     marginBottom: 8,
                   }}
                 >
-                  82/100
+                  {result.resume_parse.skill_count}
                 </p>
                 <p style={{ fontSize: 13, color: "#48658f" }}>
-                  CV Anda sudah sangat baik!
+                  skill berhasil diekstrak dari CV
                 </p>
               </div>
 
@@ -594,10 +669,10 @@ export default function UploadPage() {
                     marginBottom: 8,
                   }}
                 >
-                  75%
+                  {result.gap_analysis.match_percentage}%
                 </p>
                 <p style={{ fontSize: 13, color: "#48658f" }}>
-                  Sesuai dengan pasar kerja
+                  terhadap lowongan terbaik
                 </p>
               </div>
 
@@ -621,20 +696,20 @@ export default function UploadPage() {
                     letterSpacing: "0.05em",
                   }}
                 >
-                  Tingkat Pengalaman
+                  Lowongan Cocok
                 </p>
                 <p
                   style={{
-                    fontSize: 28,
+                    fontSize: 48,
                     fontWeight: 800,
                     color: "#93c8ff",
                     marginBottom: 8,
                   }}
                 >
-                  Mid-Level
+                  {result.job_matches.total_matches}
                 </p>
                 <p style={{ fontSize: 13, color: "#48658f" }}>
-                  5-7 tahun pengalaman
+                  lowongan paling relevan
                 </p>
               </div>
 
@@ -661,8 +736,12 @@ export default function UploadPage() {
                   Top Skills
                 </p>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {["JavaScript", "React", "TypeScript", "Node.js"].map(
-                    (skill) => (
+                  {result.resume_parse.extracted_skills.length === 0 ? (
+                    <span style={{ fontSize: 13, color: "#94a3b8" }}>
+                      Tidak ada skill terdeteksi.
+                    </span>
+                  ) : (
+                    result.resume_parse.extracted_skills.map((skill) => (
                       <span
                         key={skill}
                         style={{
@@ -678,23 +757,14 @@ export default function UploadPage() {
                       >
                         {skill}
                       </span>
-                    )
+                    ))
                   )}
                 </div>
               </div>
             </div>
 
-            {/* Recommendations */}
-            <div
-              style={{
-                background: "rgba(255,255,255,0.92)",
-                border: "1px solid rgba(148,163,184,0.18)",
-                borderRadius: 16,
-                padding: 28,
-                marginBottom: 32,
-                boxShadow: "0 18px 50px rgba(15,23,42,0.06)",
-              }}
-            >
+            {/* Rekomendasi Lowongan (Job Matching) */}
+            <div style={{ ...cardStyle, marginBottom: 20 }}>
               <h3
                 style={{
                   fontSize: 18,
@@ -703,32 +773,205 @@ export default function UploadPage() {
                   marginBottom: 20,
                 }}
               >
-                Rekomendasi Improvement
+                Rekomendasi Lowongan
               </h3>
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                {[
-                  "Tambahkan quantifiable achievements pada setiap role",
-                  "Highlight pengalaman dengan modern tech stack",
-                  "Lengkapi certification yang relevan dengan industri",
-                ].map((rec, i) => (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {result.job_matches.matches.map((job) => (
                   <div
-                    key={i}
+                    key={job.rank}
                     style={{
                       display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
                       gap: 12,
-                      alignItems: "flex-start",
+                      padding: "12px 16px",
+                      borderRadius: 12,
+                      background: "rgba(248,251,255,0.8)",
+                      border: "1px solid rgba(148,163,184,0.16)",
                     }}
                   >
-                    <CheckCircle2
-                      size={20}
-                      color="#60c2ff"
-                      style={{ marginTop: 2, flexShrink: 0 }}
-                    />
-                    <p style={{ fontSize: 14, color: "#48658f" }}>{rec}</p>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <span
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: 8,
+                          background:
+                            "linear-gradient(135deg, #4f80ff 0%, #60c2ff 100%)",
+                          color: "#fff",
+                          fontSize: 13,
+                          fontWeight: 700,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {job.rank}
+                      </span>
+                      <span
+                        style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}
+                      >
+                        {job.job_title}
+                      </span>
+                    </div>
+                    <span
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: "#4f80ff",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {Math.round(job.combined_score * 100)}%
+                    </span>
                   </div>
                 ))}
               </div>
             </div>
+
+            {/* Analisis Skill Gap */}
+            <div style={{ ...cardStyle, marginBottom: 20 }}>
+              <h3
+                style={{
+                  fontSize: 18,
+                  fontWeight: 700,
+                  color: "#0f172a",
+                  marginBottom: 20,
+                }}
+              >
+                Analisis Skill Gap
+              </h3>
+              {result.gap_analysis.matched_skills.length === 0 &&
+              result.gap_analysis.missing_skills.length === 0 ? (
+                <p style={{ fontSize: 14, color: "#94a3b8" }}>
+                  Data skill lowongan belum tersedia. Tambahkan file metadata
+                  lowongan di backend untuk mengaktifkan analisis ini.
+                </p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+                  <div>
+                    <p
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: "#059669",
+                        marginBottom: 10,
+                      }}
+                    >
+                      Skill Dimiliki ({result.gap_analysis.matched_skills.length})
+                    </p>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {result.gap_analysis.matched_skills.map((s) => (
+                        <span
+                          key={s}
+                          style={{
+                            padding: "6px 14px",
+                            borderRadius: 999,
+                            fontSize: 12,
+                            fontWeight: 600,
+                            background: "rgba(16,185,129,0.12)",
+                            color: "#047857",
+                            border: "1px solid rgba(16,185,129,0.24)",
+                          }}
+                        >
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: "#dc2626",
+                        marginBottom: 10,
+                      }}
+                    >
+                      Skill Kurang ({result.gap_analysis.missing_skills.length})
+                    </p>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {result.gap_analysis.missing_skills.map((s) => (
+                        <span
+                          key={s}
+                          style={{
+                            padding: "6px 14px",
+                            borderRadius: 999,
+                            fontSize: 12,
+                            fontWeight: 600,
+                            background: "rgba(239,68,68,0.1)",
+                            color: "#b91c1c",
+                            border: "1px solid rgba(239,68,68,0.24)",
+                          }}
+                        >
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Rekomendasi Pembelajaran (Learning Path) */}
+            {result.learning_recommendations.recommendations.length > 0 && (
+              <div style={{ ...cardStyle, marginBottom: 32 }}>
+                <h3
+                  style={{
+                    fontSize: 18,
+                    fontWeight: 700,
+                    color: "#0f172a",
+                    marginBottom: 20,
+                  }}
+                >
+                  Rekomendasi Pembelajaran
+                </h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  {result.learning_recommendations.recommendations.map((rec) => (
+                    <div
+                      key={rec.skill}
+                      style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
+                    >
+                      <CheckCircle2
+                        size={20}
+                        color="#60c2ff"
+                        style={{ marginTop: 2, flexShrink: 0 }}
+                      />
+                      <div>
+                        <p
+                          style={{
+                            fontSize: 14,
+                            fontWeight: 600,
+                            color: "#0f172a",
+                            textTransform: "capitalize",
+                            marginBottom: 2,
+                          }}
+                        >
+                          {rec.skill}
+                        </p>
+                        {rec.resources.map((r, ri) => (
+                          <a
+                            key={ri}
+                            href={r.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                              display: "block",
+                              fontSize: 13,
+                              color: "#48658f",
+                              textDecoration: "none",
+                            }}
+                          >
+                            {r.title} · {r.provider} ({r.level})
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Action Buttons */}
             <div
